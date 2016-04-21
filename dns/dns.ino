@@ -1,3 +1,10 @@
+// TODO:
+// Figure out how to properly read magnetometer
+// Finish calcularing bearing with haversine formula
+// Figure out how to clear pixels on the led array
+// Measure and cut/drill enclosure
+// Wire everything together
+
 
 #include <Wire.h> //I2C Arduino Library
 #include <Adafruit_NeoPixel.h>
@@ -23,7 +30,7 @@
 #define LCD_CMD   0
 
 // LED array defines
-#define LED_PIN 10
+#define LED_PIN 12
 #define NUM_LEDS 16
 #define BRIGHTNESS 50
 
@@ -271,6 +278,19 @@ void loop(void)
     y |= Wire.read(); //Y lsb
   }
   
+  float heading = atan2((float) y, (float)x);
+  
+  // Correct for when signs are reversed.
+  if(heading < 0)
+    heading += 2*PI;
+    
+  // Check for wrap due to addition of declination.
+  if(heading > 2*PI)
+    heading -= 2*PI;
+   
+  // Convert radians to degrees for readability.
+  int headingDegrees = heading * 180/M_PI; 
+  
   //Print out values of each axis
   Serial.print("x: ");
   Serial.print(x);
@@ -278,10 +298,11 @@ void loop(void)
   Serial.print(y);
   Serial.print("  z: ");
   Serial.println(z);
-   delay(250);
+  delay(250);
    
-   displayDirectionOnLED(x);
+  displayDirectionOnLED(headingDegrees);
    
+  // Bluetooth reading 
   /*while (Serial.available()) {
     float xCoor = Serial.parseFloat();
     float yCoor = Serial.parseFloat();
@@ -348,7 +369,12 @@ float[] calculateDistanceAndHeading(float lat1, float lat2, float lon1, float lo
 
 void displayDirectionOnLED(int bearing)
 {
-    bearing = map(bearing, -150, 300, 0, strip.numPixels()-1);
-    strip.setPixelColor(bearing, strip.Color(0,150,0));
+    bearing = map(bearing, 0, 360, 0, strip.numPixels()-1);
+    for(int i = 0; i < strip.numPixels(); i++)
+    {
+      strip.setPixelColor(i, strip.Color(0,0,0));  // clear all pixels
+      delay(20);
+    }
+    strip.setPixelColor(bearing, strip.Color(0,255,0));
     strip.show();
 }
