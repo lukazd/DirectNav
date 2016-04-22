@@ -6,37 +6,36 @@
 // Wire everything together
 
 
-#include <Wire.h> //I2C Arduino Library
-#include <Adafruit_NeoPixel.h>
-#include <math.h>
+#include <Wire.h>                 // Library for I2C
+#include <Adafruit_NeoPixel.h>    // Library for LED Ring
 
 // Magnometer Defines
-#define address_mag 0x1E //0011110b, I2C 7bit address of HMC5883 (Magnetometer)
+#define address_mag 0x1E // I2C 7bit address of HMC5883 (Magnetometer)
 
 // LCD Defines
-#define PIN_SCE   7  // LCD CS  .... Pin 3
-#define PIN_RESET 6  // LCD RST .... Pin 1
-#define PIN_DC    5  // LCD Dat/Com. Pin 5
-#define PIN_SDIN  11  // LCD SPIDat . Pin 6
-#define PIN_SCLK  13  // LCD SPIClk . Pin 4
-                     // LCD Gnd .... Pin 2
-                     // LCD Vcc .... Pin 8
-                     // LCD Vlcd ... Pin 7
+#define PIN_SCE   7    // LCD CS  .... Pin 3
+#define PIN_RESET 6    // LCD RST .... Pin 1
+#define PIN_DC    5    // LCD Dat/Com. Pin 5
+#define PIN_SDIN  11   // LCD SPIDat . Pin 6
+#define PIN_SCLK  13   // LCD SPIClk . Pin 4
 
-// LCD Defines
+
+// LCD Defines Cont.
 #define LCD_C     LOW
 #define LCD_D     HIGH
 #define LCD_X     84
 #define LCD_Y     48
 #define LCD_CMD   0
 
-// LED array defines
+// LED Ring defines
 #define LED_PIN 12
 #define NUM_LEDS 16
 #define BRIGHTNESS 20
 
-Adafruit_NeoPixel strip = Adafruit_NeoPixel(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
+// Define the LED ring
+Adafruit_NeoPixel ring = Adafruit_NeoPixel(NUM_LEDS, LED_PIN/*, NEO_GRB + NEO_KHZ800*/);
 
+// Contains constants for displaying characters on NOKIA display
 static const byte ASCII[][5] =
 {
    {0x00, 0x00, 0x00, 0x00, 0x00} // 20  
@@ -137,9 +136,7 @@ static const byte ASCII[][5] =
   ,{0x00, 0x06, 0x09, 0x09, 0x06} // 7f →
 };
 
-
-
-
+// Display a character on the LCD
 void LcdCharacter(char character)
 {
   LcdWrite(LCD_D, 0x00);
@@ -150,6 +147,7 @@ void LcdCharacter(char character)
   LcdWrite(LCD_D, 0x00);
 }
 
+// Clear the LCD
 void LcdClear(void)
 {
   for (int index = 0; index < LCD_X * LCD_Y / 8; index++)
@@ -158,6 +156,7 @@ void LcdClear(void)
   }
 }
 
+// Initialize the LCD
 void LcdInitialise(void)
 {
   pinMode(PIN_SCE,   OUTPUT);
@@ -167,7 +166,7 @@ void LcdInitialise(void)
   pinMode(PIN_SCLK,  OUTPUT);
 
   digitalWrite(PIN_RESET, LOW);
- // delay(1);
+  // delay(1);
   digitalWrite(PIN_RESET, HIGH);
 
   LcdWrite( LCD_CMD, 0x21 );  // LCD Extended Commands.
@@ -179,6 +178,7 @@ void LcdInitialise(void)
   LcdWrite(LCD_C, 0x0C);
 }
 
+// Display a string on the LCD
 void LcdString(char *characters)
 {
   while (*characters)
@@ -187,6 +187,7 @@ void LcdString(char *characters)
   }
 }
 
+// Display a byte on the LCD
 void LcdWrite(byte dc, byte data)
 {
   digitalWrite(PIN_DC, dc);
@@ -195,10 +196,9 @@ void LcdWrite(byte dc, byte data)
   digitalWrite(PIN_SCE, HIGH);
 }
 
-// gotoXY routine to position cursor 
+// Position cursor at an X,Y position
 // x - range: 0 to 84
 // y - range: 0 to 5
-
 void gotoXY(int x, int y)
 {
   LcdWrite( 0, 0x80 | x);  // Column.
@@ -206,36 +206,8 @@ void gotoXY(int x, int y)
 
 }
 
-
-
-void drawLine(void)
-{
-  unsigned char  j;  
-   for(j=0; j<84; j++) // top
-	{
-          gotoXY (j,0);
-	  LcdWrite (1,0x01);
-  } 	
-  for(j=0; j<84; j++) //Bottom
-	{
-          gotoXY (j,5);
-	  LcdWrite (1,0x80);
-  } 	
-
-  for(j=0; j<6; j++) // Right
-	{
-          gotoXY (83,j);
-	  LcdWrite (1,0xff);
-  } 	
-	for(j=0; j<6; j++) // Left
-	{
-          gotoXY (0,j);
-	  LcdWrite (1,0xff);
-  }
-
-}
-
-
+// Called at startup of Arduino
+// Sets up the modules 
 void setup(void)
 {
   // Initialize and clear nokia display
@@ -253,93 +225,41 @@ void setup(void)
   Wire.endTransmission();
   
   // Setup the LEDs
-  strip.setBrightness(BRIGHTNESS);
-  strip.begin();
-  strip.show();
+  ring.setBrightness(BRIGHTNESS);
+  ring.begin();
+  ring.show();
 }
 
+// Main loop
+// - Reads destinations from user
+// - Gets the user's heading
+// - Calculates the distance and heading to a destination
+// - Calculates the direction based on user and destination headings
+// - Displays the direction on the LED ring
+// - Displays the distance on the LCD
 void loop(void)
 {
-  int x,y,z;
+  int userHeading, destinationHeading, displayHeading;
   char xdirection[20];
-  
-  //Tell the HMC5883L where to begin reading data
-  Wire.beginTransmission(address_mag);
-  Wire.write(0x03); //select register 3, X MSB register
-  Wire.endTransmission();
-  
-  //Read data from each axis, 2 registers per axis
-  Wire.requestFrom(address_mag, 6);
-  if(6<=Wire.available()){
-    x = Wire.read()<<8; //X msb
-    x |= Wire.read(); //X lsb
-    z = Wire.read()<<8; //Z msb
-    z |= Wire.read(); //Z lsb
-    y = Wire.read()<<8; //Y msb
-    y |= Wire.read(); //Y lsb
-  }
-  
-  float heading = atan2((float) y, (float)x);
-  
-  // Correct for when signs are reversed.
-  if(heading < 0)
-    heading += 2*PI;
-    
-  // Check for wrap due to addition of declination.
-  if(heading > 2*PI)
-    heading -= 2*PI;
-   
-  // Convert radians to degrees for readability.
-  int headingDegrees = heading * 180/M_PI; 
-  
-  //Print out values of each axis
-  Serial.print("x: ");
-  Serial.print(x);
-  Serial.print("  y: ");
-  Serial.print(y);
-  Serial.print("  z: ");
-  Serial.println(z);
-  delay(250);
-   
-  displayDirectionOnLED(headingDegrees);
-   
-  // Bluetooth reading 
-  /*while (Serial.available()) {
-    float xCoor = Serial.parseFloat();
-    float yCoor = Serial.parseFloat();
-    Serial.print("xCoor: ");
-    Serial.print(xCoor);
-    Serial.print("yCoor: ");
-    Serial.print(yCoor);
-  }*/
-  
   float distance;
-  float userBearing;
   
-  calculateDistanceAndHeading(41.6611, 44.9778, -91.5302, -93.265, &distance, &userBearing);
+  // Get destinations from user if changed
+  readBluetoothConnection();
   
-  char displayDistance[20];
-  //snprintf(displayDistance, 20, "%f", distance);
-  dtostrf(distance/1000, 6, 1, displayDistance);
-  //Serial.println(displayDistance);
+  // Calculate the latest user heading
+  getUserHeading(&userHeading);
+   
+  // Calculate the distance and heading from current location to destination
+  calculateDistanceAndHeading(41.6611, 44.9778, -91.5302, -93.265, &distance, &destinationHeading); 
+   
+  // Calculate the heading to get to the destination from the user's direction
+  calculateHeadingFromUserHeading(userHeading, destinationHeading, &displayHeading);
+   
+  // Display the direction the user should go on the LED Ring
+  displayDirectionOnLED(displayHeading);
   
-  // Display the distance and units as miles
-  LcdClear();
-  gotoXY(20,2);
-  LcdString(displayDistance);
-  gotoXY(0,3);
-  LcdCharacter('k');
-  LcdCharacter('i');
-  LcdCharacter('l');
-  LcdCharacter('o');
-  LcdCharacter('m');
-  LcdCharacter('e');
-  LcdCharacter('t');
-  LcdCharacter('e');
-  LcdCharacter('r');
-  LcdCharacter('s');
-  
-  
+  // Display the distance until the destination on the LCD
+  displayDistance(distance);
 }
 
 float calculateBearing(float x1, float y1, float x2, float y2) {
@@ -347,8 +267,21 @@ float calculateBearing(float x1, float y1, float x2, float y2) {
 }
 
 // Use haversine formula to calculate distance
-void calculateDistanceAndHeading(float lat1, float lat2, float lon1, float lon2, float *distance, float *userBearing)
+void calculateDistanceAndHeading(float lat1, float lat2, float lon1, float lon2, float *distance, int *destinationHeading)
 {
+    // This may all need to be replaced by the TinyGPS++ library which can 
+    // do distance and course, like the following
+    distance = TinyGPSPlus.distanceBetween(
+      gps.location.lat(),
+      gps.location.lng(),
+      lat2,
+      lon2);
+    *destinationHeading = TinyGPSPlus.courseTo(
+      gps.location.lat(),
+      gps.location.lng(),
+      lat2,
+      lon2);
+      
     /*int r = 6371000; // radius of earth in meters
     float phi1 = lat1*PI/180;
     float phi2 = lat2*PI/180;
@@ -363,7 +296,7 @@ void calculateDistanceAndHeading(float lat1, float lat2, float lon1, float lon2,
     float distLong = 111194.9 * abs(lon1 - lon2) * cos(radians((lat1 + lat2) / 2));
     float d = sqrt(pow(distLat, 2) + pow(distLong, 2));
     *distance = d;
-    Serial.println(d);
+    //Serial.println(d);
     
     /*
     float phi3 = 180*(lon1)/3.1415926535;//flon1  //also must be done in radians
@@ -382,14 +315,92 @@ void calculateDistanceAndHeading(float lat1, float lat2, float lon1, float lon2,
     *userBearing = heading;*/
 }
 
+// Reads the magnetometer through i2c protocol
+// calcualtes the heading of the user based on
+// the values read from the magnetometer
+void getUserHeading(int *userHeading)
+{
+  int x, y, z;
+  
+  //Tell the HMC5883L where to begin reading data
+  Wire.beginTransmission(address_mag);
+  Wire.write(0x03); //select register 3, X MSB register
+  Wire.endTransmission();
+  
+  //Read data from each axis, 2 registers per axis
+  Wire.requestFrom(address_mag, 6);
+  if(6<=Wire.available()){
+    x = Wire.read()<<8; //X msb
+    x |= Wire.read(); //X lsb
+    z = Wire.read()<<8; //Z msb
+    z |= Wire.read(); //Z lsb
+    y = Wire.read()<<8; //Y msb
+    y |= Wire.read(); //Y lsb
+  }
+  
+  // Simple formula for calculating heading (asssumes flat magnetometer)
+  float heading = atan2((float) y, (float) x);
+  
+  // Correct for when signs are reversed.
+  if(heading < 0)
+    heading += 2*PI;
+    
+  // Check for wrap due to addition of declination.
+  if(heading > 2*PI)
+    heading -= 2*PI;
+   
+  // Convert radians to degrees
+  *userHeading = heading * 180/M_PI;
+}
+
+// Displays a direction on the LED ring
 void displayDirectionOnLED(int bearing)
 {
-    bearing = map(bearing, 0, 360, 0, strip.numPixels()-1);
-    for(int i = 0; i < strip.numPixels(); i++)
+    bearing = map(bearing, 0, 360, 0, ring.numPixels()-1);
+    for(int i = 0; i < ring.numPixels(); i++)
     {
-      strip.setPixelColor(i, strip.Color(0,0,0));  // clear all pixels
+      ring.setPixelColor(i, ring.Color(0,0,0));  // clear all pixels
       delay(20);
     }
-    strip.setPixelColor(bearing, strip.Color(0,255,0));
-    strip.show();
+    ring.setPixelColor(bearing, ring.Color(0,255,0));  // set the specified pixel
+    ring.show();
+}
+
+// Reads the bluetooth connection and
+// adds any desired destinations to the
+// data structure of destinations
+void readBluetoothConnection()
+{
+  while (Serial.available()) 
+  {
+    float desiredLatitude = Serial.parseFloat();
+    float desiredLongitude = Serial.parseFloat();
+  }
+}
+
+// Displays the distance specified on the NOKIA
+// screen and displays the units as kilometers
+void displayDistance(float distance)
+{
+  char displayDistance[20];
+  
+  // 6 numbers with 1 number after decimal place
+  dtostrf(distance/1000, 6, 1, displayDistance); 
+  
+
+  LcdClear();
+  
+  gotoXY(20,2);
+  LcdString(displayDistance);
+  
+  gotoXY(0,3);
+  LcdString("kilometers");
+}
+
+// Calculates the direction to the destination
+// from the perspective of the user's current
+// heading
+void calculateHeadingFromUserHeading(int userHeading, int destinationHeading, int *displayHeading) 
+{
+  *displayHeading = userHeading - (userHeading + destinationHeading);
 }
