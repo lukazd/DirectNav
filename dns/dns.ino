@@ -8,6 +8,7 @@
 
 #include <Wire.h> //I2C Arduino Library
 #include <Adafruit_NeoPixel.h>
+#include <math.h>
 
 // Magnometer Defines
 #define address_mag 0x1E //0011110b, I2C 7bit address of HMC5883 (Magnetometer)
@@ -32,7 +33,7 @@
 // LED array defines
 #define LED_PIN 12
 #define NUM_LEDS 16
-#define BRIGHTNESS 50
+#define BRIGHTNESS 20
 
 Adafruit_NeoPixel strip = Adafruit_NeoPixel(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
 
@@ -312,17 +313,30 @@ void loop(void)
     Serial.print(yCoor);
   }*/
   
-  itoa(x,xdirection,10);
+  float distance;
+  float userBearing;
+  
+  calculateDistanceAndHeading(41.6611, 44.9778, -91.5302, -93.265, &distance, &userBearing);
+  
+  char displayDistance[20];
+  //snprintf(displayDistance, 20, "%f", distance);
+  dtostrf(distance/1000, 6, 1, displayDistance);
+  //Serial.println(displayDistance);
   
   // Display the distance and units as miles
   LcdClear();
-  gotoXY(24,2);
-  LcdString(xdirection);
-  gotoXY(24,3);
-  LcdCharacter('m');
+  gotoXY(20,2);
+  LcdString(displayDistance);
+  gotoXY(0,3);
+  LcdCharacter('k');
   LcdCharacter('i');
   LcdCharacter('l');
+  LcdCharacter('o');
+  LcdCharacter('m');
   LcdCharacter('e');
+  LcdCharacter('t');
+  LcdCharacter('e');
+  LcdCharacter('r');
   LcdCharacter('s');
   
   
@@ -333,25 +347,28 @@ float calculateBearing(float x1, float y1, float x2, float y2) {
 }
 
 // Use haversine formula to calculate distance
-float[] calculateDistanceAndHeading(float lat1, float lat2, float lon1, float lon2)
+void calculateDistanceAndHeading(float lat1, float lat2, float lon1, float lon2, float *distance, float *userBearing)
 {
-    int r = 6371000; // radius of earth in meters
-    float arr[2];
-    float phi1 = lat1*3.1415926535/180;
-    float phi2 = lat2*3.1415926535/180;
-    float deltaPhi = (lat2-lat1)*3.1415926535/180;
-    float deltaLambda = (lon2-lon1)*3.1415926535/180;
+    /*int r = 6371000; // radius of earth in meters
+    float phi1 = lat1*PI/180;
+    float phi2 = lat2*PI/180;
+    float deltaPhi = (lat2-lat1)*PI/180;
+    float deltaLambda = (lon2-lon1)*PI/180; 
     
-    float a = sin(deltaPhi/2) * sin(deltaPhi/2) +
-              cos(phi1) * cos(phi2) * sin(deltaLambda/2) * sin(deltaLambda/2);
+    float a = sin(deltaPhi/2) * sin(deltaPhi/2) + cos(phi1) * cos(phi2) * sin(deltaLambda/2) * sin(deltaLambda/2);
     float c = 2 * atan2(sqrt(a), sqrt(1-a));
     float d = r*c;
-    printf("distance = %f", d); //should be 245.139 miles or 394.5129 km
+    //printf("distance = %f", d); //should be 245.139 miles or 394.5129 km*/
+    float distLat = abs(lat1 - lat2) * 111194.9;
+    float distLong = 111194.9 * abs(lon1 - lon2) * cos(radians((lat1 + lat2) / 2));
+    float d = sqrt(pow(distLat, 2) + pow(distLong, 2));
+    *distance = d;
+    Serial.println(d);
     
-    
+    /*
     float phi3 = 180*(lon1)/3.1415926535;//flon1  //also must be done in radians
     float phi4 = 180*(lon2)/3.1415926535;//x2lon  //radians duh.
-    float heading = atan2(sin(phi4-phi3)*cos(phi2),cos(phi1)*sin(phi2)-sin(lat1)*cos(lat2)*cos(lon2-lon1))*2*3.1415926535);
+    float heading = atan2(sin(phi4-phi3)*cos(phi2),cos(phi1)*sin(phi2)-sin(lat1)*cos(lat2)*cos(lon2-lon1))*2*3.1415926535;
     //float heading = 1; //place holder for testing other parts of the code
     heading = heading*180/3.1415926535;  // convert from radians to degrees
     int head = heading; //make it a integer now
@@ -361,10 +378,8 @@ float[] calculateDistanceAndHeading(float lat1, float lat2, float lon1, float lo
     }
     printf("Heading = %f\n", heading); //should be 339
 
-    arr[0] = d;
-    arr[1] = heading;
-
-    return arr;
+    *distance = d;
+    *userBearing = heading;*/
 }
 
 void displayDirectionOnLED(int bearing)
