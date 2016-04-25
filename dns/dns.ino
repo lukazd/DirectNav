@@ -32,8 +32,25 @@
 #define NUM_LEDS 16
 #define BRIGHTNESS 20
 
-// Define the LED ring
+// Define the max number of locations the user can haversine
+#define MAX_LOCATIONS 5
+
+// Instantiate the LED ring
 Adafruit_NeoPixel ring = Adafruit_NeoPixel(NUM_LEDS, LED_PIN/*, NEO_GRB + NEO_KHZ800*/);
+
+// A structure that holds data for a user's specified location
+struct location
+{
+	double latitude;
+	double longitude;
+	char locationName[10];
+}
+
+// The array of location struct to hold multiple user specified locations
+struct location locations[MAX_LOCATIONS];
+
+volatile int currentLocation;
+volatile int numLocations;
 
 // Contains constants for displaying characters on NOKIA display
 static const byte ASCII[][5] =
@@ -136,75 +153,7 @@ static const byte ASCII[][5] =
   ,{0x00, 0x06, 0x09, 0x09, 0x06} // 7f →
 };
 
-// Display a character on the LCD
-void LcdCharacter(char character)
-{
-  LcdWrite(LCD_D, 0x00);
-  for (int index = 0; index < 5; index++)
-  {
-    LcdWrite(LCD_D, ASCII[character - 0x20][index]);
-  }
-  LcdWrite(LCD_D, 0x00);
-}
 
-// Clear the LCD
-void LcdClear(void)
-{
-  for (int index = 0; index < LCD_X * LCD_Y / 8; index++)
-  {
-    LcdWrite(LCD_D, 0x00);
-  }
-}
-
-// Initialize the LCD
-void LcdInitialise(void)
-{
-  pinMode(PIN_SCE,   OUTPUT);
-  pinMode(PIN_RESET, OUTPUT);
-  pinMode(PIN_DC,    OUTPUT);
-  pinMode(PIN_SDIN,  OUTPUT);
-  pinMode(PIN_SCLK,  OUTPUT);
-
-  digitalWrite(PIN_RESET, LOW);
-  // delay(1);
-  digitalWrite(PIN_RESET, HIGH);
-
-  LcdWrite( LCD_CMD, 0x21 );  // LCD Extended Commands.
-  LcdWrite( LCD_CMD, 0xBf );  // Set LCD Vop (Contrast). //B1
-  LcdWrite( LCD_CMD, 0x04 );  // Set Temp coefficent. //0x04
-  LcdWrite( LCD_CMD, 0x14 );  // LCD bias mode 1:48. //0x13
-  LcdWrite( LCD_CMD, 0x0C );  // LCD in normal mode. 0x0d for inverse
-  LcdWrite(LCD_C, 0x20);
-  LcdWrite(LCD_C, 0x0C);
-}
-
-// Display a string on the LCD
-void LcdString(char *characters)
-{
-  while (*characters)
-  {
-    LcdCharacter(*characters++);
-  }
-}
-
-// Display a byte on the LCD
-void LcdWrite(byte dc, byte data)
-{
-  digitalWrite(PIN_DC, dc);
-  digitalWrite(PIN_SCE, LOW);
-  shiftOut(PIN_SDIN, PIN_SCLK, MSBFIRST, data);
-  digitalWrite(PIN_SCE, HIGH);
-}
-
-// Position cursor at an X,Y position
-// x - range: 0 to 84
-// y - range: 0 to 5
-void gotoXY(int x, int y)
-{
-  LcdWrite( 0, 0x80 | x);  // Column.
-  LcdWrite( 0, 0x40 | y);  // Row.  
-
-}
 
 // Called at startup of Arduino
 // Sets up the modules 
@@ -228,6 +177,13 @@ void setup(void)
   ring.setBrightness(BRIGHTNESS);
   ring.begin();
   ring.show();
+  
+  // Initialize the button for interrupts (Input A0)
+  pinMode(A0, INPUT);
+  digitalWrite(A0, HIGH);
+  attachInterrupt(0, changeWaypoint, RISING);
+  PCICR = 0x02;
+  PCMSK1 = 0b00000001;
 }
 
 // Main loop
@@ -239,18 +195,20 @@ void setup(void)
 // - Displays the distance on the LCD
 void loop(void)
 {
+  noInterrupts();
+	
   int userHeading, destinationHeading, displayHeading;
   char xdirection[20];
   float distance;
   
   // Get destinations from user if changed
-  readBluetoothConnection();
+  readBluetoothConnection(&currentLocation, &numLocations);
   
   // Calculate the latest user heading
   getUserHeading(&userHeading);
    
   // Calculate the distance and heading from current location to destination
-  calculateDistanceAndHeading(41.6611, 44.9778, -91.5302, -93.265, &distance, &destinationHeading); 
+  calculateDistanceAndHeading(41.6611, locations[currentLocation].latitude, -91.5302, locations[currentLocation].longitude, &distance, &destinationHeading); 
    
   // Calculate the heading to get to the destination from the user's direction
   calculateHeadingFromUserHeading(userHeading, destinationHeading, &displayHeading);
@@ -258,8 +216,13 @@ void loop(void)
   // Display the direction the user should go on the LED Ring
   displayDirectionOnLED(displayHeading);
   
-  // Display the distance until the destination on the LCD
-  displayDistance(distance);
+  // Display the distance until the destination and the destination's name on the LCD
+  displayDistanceAndWaypoint(distance);
+  
+  // Delay for a quarter second before updating anything
+  // We will allow for the button interrupt here
+  Interrupts();
+  delay(250);
 }
 
 float calculateBearing(float x1, float y1, float x2, float y2) {
@@ -368,26 +331,36 @@ void displayDirectionOnLED(int bearing)
 
 // Reads the bluetooth connection and
 // adds any desired destinations to the
-// data structure of destinations
+// array of destinations
 void readBluetoothConnection()
-{
-  while (Serial.available()) 
+{ 
+  // Reset the current location to 0 if new locations are being sent
+  if(Serial.available())
   {
-    float desiredLatitude = Serial.parseFloat();
-    float desiredLongitude = Serial.parseFloat();
+	currentLocation = 0;
+	numLocations = 0;
+  }
+  
+  // Read in location values until there are no more or we reached max
+  while (Serial.available() && numLocations < MAX_LOCATIONS) 
+  {
+	locations[numLocations].latitude = Serial.parseFloat();
+	locations[numLocations].longitude = Serial.parseFloat();
+	locations[numLocations].locationName = Serial.parse();
+	numLocations++;
   }
 }
 
 // Displays the distance specified on the NOKIA
 // screen and displays the units as kilometers
-void displayDistance(float distance)
+// also displays the waypoints name
+void displayDistanceAndWaypoint(float distance)
 {
   char displayDistance[20];
   
   // 6 numbers with 1 number after decimal place
   dtostrf(distance/1000, 6, 1, displayDistance); 
   
-
   LcdClear();
   
   gotoXY(20,2);
@@ -395,6 +368,9 @@ void displayDistance(float distance)
   
   gotoXY(0,3);
   LcdString("kilometers");
+  
+  gotoXY(0,4);
+  LcdString(locations[currentLocation].locationName);
 }
 
 // Calculates the direction to the destination
@@ -403,4 +379,88 @@ void displayDistance(float distance)
 void calculateHeadingFromUserHeading(int userHeading, int destinationHeading, int *displayHeading) 
 {
   *displayHeading = userHeading - (userHeading + destinationHeading);
+}
+
+// Interrupt service routine that changes the
+// waypoint to the next one
+ISR(PCINT1_vect)
+{
+  if(numLocations > 0)
+  {
+    currentLocation = (currentLocation + 1) % numLocations;
+  }
+  else
+  {
+	currentLocation = 0;
+  }
+}
+
+// Display a character on the LCD
+void LcdCharacter(char character)
+{
+  LcdWrite(LCD_D, 0x00);
+  for (int index = 0; index < 5; index++)
+  {
+    LcdWrite(LCD_D, ASCII[character - 0x20][index]);
+  }
+  LcdWrite(LCD_D, 0x00);
+}
+
+// Clear the LCD
+void LcdClear(void)
+{
+  for (int index = 0; index < LCD_X * LCD_Y / 8; index++)
+  {
+    LcdWrite(LCD_D, 0x00);
+  }
+}
+
+// Initialize the LCD
+void LcdInitialise(void)
+{
+  pinMode(PIN_SCE,   OUTPUT);
+  pinMode(PIN_RESET, OUTPUT);
+  pinMode(PIN_DC,    OUTPUT);
+  pinMode(PIN_SDIN,  OUTPUT);
+  pinMode(PIN_SCLK,  OUTPUT);
+
+  digitalWrite(PIN_RESET, LOW);
+  // delay(1);
+  digitalWrite(PIN_RESET, HIGH);
+
+  LcdWrite( LCD_CMD, 0x21 );  // LCD Extended Commands.
+  LcdWrite( LCD_CMD, 0xBf );  // Set LCD Vop (Contrast). //B1
+  LcdWrite( LCD_CMD, 0x04 );  // Set Temp coefficent. //0x04
+  LcdWrite( LCD_CMD, 0x14 );  // LCD bias mode 1:48. //0x13
+  LcdWrite( LCD_CMD, 0x0C );  // LCD in normal mode. 0x0d for inverse
+  LcdWrite(LCD_C, 0x20);
+  LcdWrite(LCD_C, 0x0C);
+}
+
+// Display a string on the LCD
+void LcdString(char *characters)
+{
+  while (*characters)
+  {
+    LcdCharacter(*characters++);
+  }
+}
+
+// Display a byte on the LCD
+void LcdWrite(byte dc, byte data)
+{
+  digitalWrite(PIN_DC, dc);
+  digitalWrite(PIN_SCE, LOW);
+  shiftOut(PIN_SDIN, PIN_SCLK, MSBFIRST, data);
+  digitalWrite(PIN_SCE, HIGH);
+}
+
+// Position cursor at an X,Y position
+// x - range: 0 to 84
+// y - range: 0 to 5
+void gotoXY(int x, int y)
+{
+  LcdWrite( 0, 0x80 | x);  // Column.
+  LcdWrite( 0, 0x40 | y);  // Row.  
+
 }
