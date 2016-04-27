@@ -8,6 +8,7 @@
 
 #include <Wire.h>                 // Library for I2C
 #include <Adafruit_NeoPixel.h>    // Library for LED Ring
+#include <TinyGPS++.h>		  // Library for the GPS
 
 // Magnometer Defines
 #define address_mag 0x1E // I2C 7bit address of HMC5883 (Magnetometer)
@@ -34,6 +35,9 @@
 
 // Define the max number of locations the user can haversine
 #define MAX_LOCATIONS 5
+
+// The TinyGPS++ object
+TinyGPSPlus gps;
 
 // Instantiate the LED ring
 Adafruit_NeoPixel ring = Adafruit_NeoPixel(NUM_LEDS, LED_PIN/*, NEO_GRB + NEO_KHZ800*/);
@@ -208,7 +212,7 @@ void loop(void)
   getUserHeading(&userHeading);
    
   // Calculate the distance and heading from current location to destination
-  calculateDistanceAndHeading(41.6611, locations[currentLocation].latitude, -91.5302, locations[currentLocation].longitude, &distance, &destinationHeading); 
+  calculateDistanceAndHeading(locations[currentLocation].latitude, locations[currentLocation].longitude, &distance, &destinationHeading); 
    
   // Calculate the heading to get to the destination from the user's direction
   calculateHeadingFromUserHeading(userHeading, destinationHeading, &displayHeading);
@@ -230,54 +234,21 @@ float calculateBearing(float x1, float y1, float x2, float y2) {
 }
 
 // Use haversine formula to calculate distance
-void calculateDistanceAndHeading(float lat1, float lat2, float lon1, float lon2, float *distance, int *destinationHeading)
+void calculateDistanceAndHeading(float destLat, float destLon, float *distance, int *destinationHeading)
 {
     // This may all need to be replaced by the TinyGPS++ library which can 
     // do distance and course, like the following
-    distance = TinyGPSPlus.distanceBetween(
+    *distance = TinyGPSPlus.distanceBetween(
       gps.location.lat(),
       gps.location.lng(),
-      lat2,
-      lon2);
+      destLat,
+      destLon);
     *destinationHeading = TinyGPSPlus.courseTo(
       gps.location.lat(),
       gps.location.lng(),
-      lat2,
-      lon2);
-      
-    /*int r = 6371000; // radius of earth in meters
-    float phi1 = lat1*PI/180;
-    float phi2 = lat2*PI/180;
-    float deltaPhi = (lat2-lat1)*PI/180;
-    float deltaLambda = (lon2-lon1)*PI/180; 
-    
-    float a = sin(deltaPhi/2) * sin(deltaPhi/2) + cos(phi1) * cos(phi2) * sin(deltaLambda/2) * sin(deltaLambda/2);
-    float c = 2 * atan2(sqrt(a), sqrt(1-a));
-    float d = r*c;
-    //printf("distance = %f", d); //should be 245.139 miles or 394.5129 km*/
-    float distLat = abs(lat1 - lat2) * 111194.9;
-    float distLong = 111194.9 * abs(lon1 - lon2) * cos(radians((lat1 + lat2) / 2));
-    float d = sqrt(pow(distLat, 2) + pow(distLong, 2));
-    *distance = d;
-    //Serial.println(d);
-    
-    /*
-    float phi3 = 180*(lon1)/3.1415926535;//flon1  //also must be done in radians
-    float phi4 = 180*(lon2)/3.1415926535;//x2lon  //radians duh.
-    float heading = atan2(sin(phi4-phi3)*cos(phi2),cos(phi1)*sin(phi2)-sin(lat1)*cos(lat2)*cos(lon2-lon1))*2*3.1415926535;
-    //float heading = 1; //place holder for testing other parts of the code
-    heading = heading*180/3.1415926535;  // convert from radians to degrees
-    int head = heading; //make it a integer now
-    if(head<0)
-    {
-      heading+=360;   //if the heading is negative then add 360 to make it positive
-    }
-    printf("Heading = %f\n", heading); //should be 339
-
-    *distance = d;
-    *userBearing = heading;*/
+      destLat,
+      destLon);
 }
-
 // Reads the magnetometer through i2c protocol
 // calcualtes the heading of the user based on
 // the values read from the magnetometer
