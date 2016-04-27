@@ -36,6 +36,13 @@
 // Define the max number of locations the user can haversine
 #define MAX_LOCATIONS 5
 
+//setup pins and baudrate for gps
+static const int RXPin = 4, TXPin = 3;
+static const int GPSBaud = 9600;
+
+// The serial connection to the GPS device
+SoftwareSerial ss(RXPin, TXPin);
+
 // The TinyGPS++ object
 TinyGPSPlus gps;
 
@@ -171,6 +178,9 @@ void setup(void)
   Serial.begin(9600);
   Wire.begin();
   
+  //Initialize GPS
+  ss.begin(GPSBaud);
+  
   //Put the HMC5883 IC into the correct operating mode
   Wire.beginTransmission(address_mag); //open communication with HMC5883
   Wire.write(0x02); //select mode register
@@ -242,7 +252,7 @@ void calculateDistanceAndHeading(float destLat, float destLon, float *distance, 
       gps.location.lat(),
       gps.location.lng(),
       destLat,
-      destLon);
+      destLon) / 1000;
     *destinationHeading = TinyGPSPlus.courseTo(
       gps.location.lat(),
       gps.location.lng(),
