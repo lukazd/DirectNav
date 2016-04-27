@@ -48,6 +48,7 @@ TinyGPSPlus gps;
 
 // Instantiate the LED ring
 Adafruit_NeoPixel ring = Adafruit_NeoPixel(NUM_LEDS, LED_PIN/*, NEO_GRB + NEO_KHZ800*/);
+const byte interruptPin = 2;
 
 // A structure that holds data for a user's specified location
 struct location
@@ -192,12 +193,9 @@ void setup(void)
   ring.begin();
   ring.show();
   
-  // Initialize the button for interrupts (Input A0)
-  pinMode(A0, INPUT);
-  digitalWrite(A0, HIGH);
-  attachInterrupt(0, changeWaypoint, RISING);
-  PCICR = 0x02;
-  PCMSK1 = 0b00000001;
+  // Initialize the button for interrupts (Input pin 2)
+  pinMode(interruptPin, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(interruptPin), changeWaypoint, RISING);
 }
 
 // Main loop
@@ -364,7 +362,7 @@ void calculateHeadingFromUserHeading(int userHeading, int destinationHeading, in
 
 // Interrupt service routine that changes the
 // waypoint to the next one
-ISR(PCINT1_vect)
+void changeWaypoint()
 {
   if(numLocations > 0)
   {
