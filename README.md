@@ -1,2 +1,2 @@
-# DopeNav
+# DirectNav
 Direct Navigation System
